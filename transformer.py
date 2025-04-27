@@ -1,12 +1,14 @@
 import torch
 from torch import nn
 from torch.nn import functional as F
+from utils.get_clones import get_clones
 
 
 class PositionalEncoder(nn.Module):
-    def __init__(self, d_model, max_seq_len=80):
+    def __init__(self, d_model, max_seq_len=80, dropout=0.1):
         super().__init__()
         self.d_model = d_model
+        self.dropout = nn.Dropout(dropout)
 
         pe = torch.zeros(max_seq_len, d_model) # (max_seq_len, d_model)
         for pos in range(max_seq_len):
@@ -24,7 +26,7 @@ class PositionalEncoder(nn.Module):
         seq_len = x.size(1)  
         # add positional encoding to input
         x = x + self.pe[:, :seq_len].detach().cuda() # (batch_size, seq_len, d_model)
-        return x
+        return self.dropout(x) # (batch_size, seq_len, d_model)
 
 
 class MultiHeadAttention(nn.Module):
@@ -144,3 +146,42 @@ class Norm(nn.Module):
         norm = (self.alpha * (x - mean) / (std + self.eps)) + self.bias
 
         return norm
+
+
+class EncoderLayer(nn.Module):
+    def __init__(self, d_model, heads, dropout=0.1, d_ff=2048):
+        super().__init__()
+        self.norm_1 = Norm(d_model)
+        self.norm_2 = Norm(d_model)
+        self.attention = MultiHeadAttention(heads, d_model, dropout=dropout)
+        self.feed_forward = FeedForward(d_model, d_ff, dropout=dropout)
+        self.dropout_1 = nn.Dropout(dropout)
+        self.dropout_2 = nn.Dropout(dropout)
+
+    def forward(self, x, mask=None):
+        attn_output = self.attention(x, x, x, mask=mask)
+        attn_output = self.dropout_1(attn_output)
+        x = x + attn_output
+        x = self.norm_1(x)
+        ff_output = self.feed_forward(x)
+        ff_output = self.dropout_2(ff_output)
+        x = x + ff_output
+        x = self.norm_2(x)
+        return x
+    
+
+class Encoder(nn.Module):
+    def __init__(self, vocab_size, d_model, N, heads, dropout=0.1, d_ff=2048):
+        super().__init__()
+        self.N = N
+        self.embdding = Embedder(vocab_size, d_model)
+        self.pe = PositionalEncoder(d_model, dropout=dropout)
+        self.layers = get_clones(EncoderLayer(d_model, heads, dropout=dropout, d_ff=d_ff), N)
+        self.norm = Norm(d_model)
+
+    def forward(self, src, mask=None):
+        x = self.embdding(src)
+        x = self.pe(x)
+        for i in range(self.N):
+            x = self.layers[i](x, mask=mask)
+        return self.norm(x) # (batch_size, seq_len, d_model)
