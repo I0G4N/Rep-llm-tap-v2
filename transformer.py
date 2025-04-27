@@ -2,6 +2,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 from utils.get_clones import get_clones
+from utils.embedder import Embedder
 
 
 class PositionalEncoder(nn.Module):
@@ -62,6 +63,8 @@ class MultiHeadAttention(nn.Module):
 
         # apply mask to scores to prevent attention to certain positions of blank tokens
         # then after applying softmax, the masked positions will have 0 attention
+        # usually, the mask in encoder is used to prevent attention to padding tokens
+        # the mask in decoder is used to prevent attention to future tokens
         if mask is not None:
             mask = mask.unsqueeze(1) # (batch_size, 1, seq_len) -> (batch_size, 1, 1, seq_len)
             scores = scores.masked_fill(mask == 0, -1e9)
@@ -173,7 +176,7 @@ class EncoderLayer(nn.Module):
 class Encoder(nn.Module):
     def __init__(self, vocab_size, d_model, N, heads, dropout=0.1, d_ff=2048):
         super().__init__()
-        self.N = N
+        self.N = N # number of layers
         self.embdding = Embedder(vocab_size, d_model)
         self.pe = PositionalEncoder(d_model, dropout=dropout)
         self.layers = get_clones(EncoderLayer(d_model, heads, dropout=dropout, d_ff=d_ff), N)
@@ -185,3 +188,61 @@ class Encoder(nn.Module):
         for i in range(self.N):
             x = self.layers[i](x, mask=mask)
         return self.norm(x) # (batch_size, seq_len, d_model)
+
+
+class DecoderLayer(nn.Module):
+    def __init__(self, d_model, heads, dropout=0.1, d_ff=2048):
+        super().__init__()
+        self.norm_1 = Norm(d_model)
+        self.norm_2 = Norm(d_model)
+        self.norm_3 = Norm(d_model)
+        self.attention_1 = MultiHeadAttention(heads, d_model, dropout=dropout)
+        self.attention_2 = MultiHeadAttention(heads, d_model, dropout=dropout)
+        self.feed_forward = FeedForward(d_model, d_ff, dropout=dropout)
+        self.dropout_1 = nn.Dropout(dropout)
+        self.dropout_2 = nn.Dropout(dropout)
+        self.dropout_3 = nn.Dropout(dropout)
+
+    def forward(self, x, enc_output, src_mask, tgt_mask):
+        """
+        Args:
+            x: input tensor of shape (batch_size, seq_len, d_model)
+            enc_output: encoder output tensor of shape (batch_size, seq_len, d_model)
+            src_mask: source mask tensor of shape (batch_size, 1, seq_len) for padding tokens
+            tgt_mask: target mask tensor of shape (batch_size, 1, seq_len) for future tokens
+        """
+        attn_output_1 = self.attention_1(x, x, x, mask=tgt_mask)
+        attn_output_1 = self.dropout_1(attn_output_1)
+        x = x + attn_output_1
+        x = self.norm_1(x)
+        attn_output_2 = self.attention_2(x, enc_output, enc_output, mask=src_mask)
+        attn_output_2 = self.dropout_2(attn_output_2)
+        x = x + attn_output_2
+        x = self.norm_2(x)
+        ff_output = self.feed_forward(x)
+        ff_output = self.dropout_3(ff_output)
+        x = x + ff_output
+        x = self.norm_3(x)
+
+        return x
+    
+
+class Decoder(nn.Module):
+    def __init__(self, vocab_size, d_model, N, heads, dropout=0.1, d_ff=2048):
+        super().__init__()
+        self.N = N # number of layers
+        self.embedding = Embedder(vocab_size, d_model)
+        self.pe = PositionalEncoder(d_model, dropout=dropout)
+        self.layers = get_clones(DecoderLayer(d_model, heads, dropout=dropout, d_ff=d_ff), N)
+        self.norm = Norm(d_model)
+        self.linear = nn.Linear(d_model, vocab_size)
+
+    def forward(self, tgt, enc_output, src_mask=None, tgt_mask=None):
+        x = self.embedding(tgt)
+        x = self.pe(x)
+        for i in range(self.N):
+            x = self.layers[i](x, enc_output, src_mask=src_mask, tgt_mask=tgt_mask)
+        x = self.norm(x)
+        x = self.linear(x) # (batch_size, seq_len, vocab_size)
+        
+        return x
