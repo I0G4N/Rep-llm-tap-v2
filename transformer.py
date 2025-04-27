@@ -124,3 +124,23 @@ class FeedForward(nn.Module):
 
         return x
 
+
+class Norm(nn.Module):
+    def __init__(self, d_model, eps=1e-6):
+        super().__init__()
+
+        self.size = d_model
+
+        self.alpha = nn.Parameter(torch.ones(self.size))
+        self.bias = nn.Parameter(torch.zeros(self.size))
+
+        # the epsilon value to prevent division by zero
+        self.eps = eps
+
+    def forward(self, x):
+        mean = x.mean(-1, keepdim=True) # (batch_size, seq_len, 1)
+        std = x.std(-1, keepdim=True)
+
+        norm = (self.alpha * (x - mean) / (std + self.eps)) + self.bias
+
+        return norm
