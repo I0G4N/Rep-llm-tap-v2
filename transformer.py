@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+from torch.nn import functional as F
 
 
 class PositionalEncoder(nn.Module):
@@ -24,3 +25,86 @@ class PositionalEncoder(nn.Module):
         # add positional encoding to input
         x = x + self.pe[:, :seq_len].detach().cuda() # (batch_size, seq_len, d_model)
         return x
+
+
+class MultiHeadAttention(nn.Module):
+    def __init__(self, heads, d_model, dropout=0.1):
+        super().__init__()
+
+        self.d_model = d_model
+        # input dimension must be divisible by number of heads
+        self.d_k = d_model // heads
+        self.h = heads
+
+        # linear layers for query, key and value, Wq, Wk, Wv
+        self.q_linear = nn.Linear(d_model, d_model)
+        self.k_linear = nn.Linear(d_model, d_model)
+        self.v_linear = nn.Linear(d_model, d_model)
+        self.dropout = nn.Dropout(dropout)
+        self.out = nn.Linear(d_model, d_model)
+
+    def attention(q, k, v, d_k, mask=None, dropout=None):
+        """
+        Args:
+            q: query tensor of shape (batch_size, h, seq_len, d_k)
+            k: key tensor of shape (batch_size, h, seq_len, d_k)
+            v: value tensor of shape (batch_size, h, seq_len, d_k)
+            d_k: dimension of key
+            mask: mask tensor of shape (batch_size, 1, seq_len)
+            
+        Returns:
+            output: attention output tensor of shape (batch_size, h, seq_len, d_k)"""
+        # attention scores, q * k^T, scaled by sqrt(d_k) to prevent large values
+        # scores: (batch_size, h, seq_len, d_k) * (batch_size, h, d_k, seq_len) -> (batch_size, h, seq_len, seq_len)
+        scores = torch.matmul(q, k.transpose(-2, -1)) / torch.sqrt(d_k)
+
+        # apply mask to scores to prevent attention to certain positions of blank tokens
+        # then after applying softmax, the masked positions will have 0 attention
+        if mask is not None:
+            mask = mask.unsqueeze(1) # (batch_size, 1, seq_len) -> (batch_size, 1, 1, seq_len)
+            scores = scores.masked_fill(mask == 0, -1e9)
+
+        # apply softmax to scores to get attention weights of each query from each key
+        scores = F.softmax(scores, dim=-1)
+
+        # apply dropout to attention weights
+        if dropout is not None:
+            scores = dropout(scores)
+
+        # apply attention weights to value tensor
+        # output: (batch_size, h, seq_len, seq_len) * (batch_size, h, seq_len, d_k) -> (batch_size, h, seq_len, d_k)
+        output = torch.matmul(scores, v)
+
+        return output
+    
+    def forward(self, q, k, v, mask=None):
+        """
+        Args:
+            q: query tensor of shape (batch_size, seq_len, d_model)
+            k: key tensor of shape (batch_size, seq_len, d_model)
+            v: value tensor of shape (batch_size, seq_len, d_model)
+            mask: mask tensor of shape (batch_size, 1, seq_len)
+        Returns:
+            output: attention output tensor of shape (batch_size, seq_len, d_model)
+        """
+        batch_size = q.size(0)
+
+        # perform linear operation and split into h heads
+        # q, k, v: (batch_size, seq_len, d_model) -> (batch_size, h, seq_len, d_k)
+        q = self.q_linear(q).view(batch_size, -1, self.h, self.d_k).transpose(1, 2)
+        k = self.k_linear(k).view(batch_size, -1, self.h, self.d_k).transpose(1, 2)
+        v = self.v_linear(v).view(batch_size, -1, self.h, self.d_k).transpose(1, 2)
+
+        # apply attention on all h heads
+        # scores: (batch_size, h, seq_len, d_k)
+        scores = self.attention(q, k, v, self.d_k, mask=mask, dropout=self.dropout)
+
+        # concatenate heads and put through final linear layer
+        # scores: (batch_size, h, seq_len, d_k) -> (batch_size, seq_len, d_model)
+        # why contiguous? after transpose, the tensor is not contiguous in memory
+        # so we need to make it contiguous before reshaping
+        concat = scores.transpose(1, 2).contiguous().view(batch_size, -1, self.d_model)
+
+        output = self.out(concat) # (batch_size, seq_len, d_model)
+
+        return output
