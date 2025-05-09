@@ -235,14 +235,27 @@ class Decoder(nn.Module):
         self.pe = PositionalEncoder(d_model, dropout=dropout)
         self.layers = get_clones(DecoderLayer(d_model, heads, dropout=dropout, d_ff=d_ff), N)
         self.norm = Norm(d_model)
-        self.linear = nn.Linear(d_model, vocab_size)
 
     def forward(self, tgt, enc_output, src_mask=None, tgt_mask=None):
         x = self.embedding(tgt)
         x = self.pe(x)
         for i in range(self.N):
             x = self.layers[i](x, enc_output, src_mask=src_mask, tgt_mask=tgt_mask)
-        x = self.norm(x)
-        x = self.linear(x) # (batch_size, seq_len, vocab_size)
+        x = self.norm(x) # (batch_size, seq_len, d_model)
         
         return x
+
+
+class Transformer(nn.Module):
+    def __init__(self, src_vocab, trg_vocab, d_model, N, heads, dropout=0.1, d_ff=2048):
+        super().__init__()
+        self.encoder = Encoder(src_vocab, d_model, N, heads, dropout, d_ff)
+        self.decoder = Decoder(trg_vocab, d_model, N, heads, dropout, d_ff)
+        self.out = nn.Linear(d_model, trg_vocab)
+
+    def forward(self, src, trg, src_mask, trg_mask):
+        enc_output = self.encoder(src, src_mask)
+        dec_output = self.decoder(trg, enc_output, src_mask, trg_mask)
+        output = self.out(dec_output)
+
+        return output # (batch_size, seq_len, trg_vocab)
