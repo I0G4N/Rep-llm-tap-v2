@@ -1,5 +1,5 @@
 from tokenizers import BertWordPieceTokenizer
-from transformers import BertTokenizerFast
+from transformers import BertTokenizerFast, BertConfig, BertForMaskedLM, DataCollatorForLanguageModeling, Trainer, TrainingArguments
 import os, json
 from datasets import concatenate_datasets, load_dataset
 from itertools import chain
@@ -119,3 +119,37 @@ if not truncate:
     # set the format to torch
     train_dataset.set_format(type="torch")
     test_dataset.set_format(type="torch")
+
+
+model_config = BertConfig(vocab_size=vocab_size, max_position_embeddings=max_length)
+model = BertForMaskedLM(config=model_config) # create a BERT model for masked language modeling
+
+# Initialize the data collator for language modeling, randomly masks tokens in the input by the prob
+data_collator = DataCollatorForLanguageModeling(
+    tokenizer=tokenizer, mlm=True, mlm_probability=0.2
+)
+
+training_args = TrainingArguments(
+    output_dir=model_path,  # output directory to save the model checkpoints
+    eval_strategy="steps",  # evaluate the model every logging_steps
+    overwrite_output_dir=True,  # overwrite the output directory if it exists
+    num_train_epochs=10,
+    per_device_train_batch_size=10,
+    gradient_accumulation_steps=8, # accumulate gradients over 8 steps
+
+    per_device_eval_batch_size=64,
+    logging_steps=1000,  # log every 1000 steps
+    save_steps=1000,  # save the model every 1000 steps
+    load_best_model_at_end=True,  # load the best model at the end of training
+)
+
+
+trainer = Trainer(
+    model=model,
+    args=training_args,
+    data_collator=data_collator,
+    train_dataset=train_dataset,
+    eval_dataset=test_dataset,
+)
+
+trainer.train()  # start training
