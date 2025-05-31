@@ -1,4 +1,4 @@
-from transformer import Transformer
+from ch2.TransformerLM.transformer import Transformer
 from torch import nn
 import torch
 import time
