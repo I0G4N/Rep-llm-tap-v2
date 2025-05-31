@@ -5,8 +5,8 @@ from datasets import concatenate_datasets, load_dataset
 from itertools import chain
 
 
-bookcorpus = load_dataset("bookcorpus", split="train")
-wiki = load_dataset("wikipedia", "20220301.en", split="train")
+bookcorpus = load_dataset("bookcorpus", split="train", trust_remote_code=True, cache_dir="data")
+wiki = load_dataset("wikipedia", "20220301.en", split="train", trust_remote_code=True, cache_dir="data")
 
 wiki = wiki.remove_columns([col for col in wiki.column_names if col != "text"])
 
