@@ -1,9 +1,16 @@
-from ch2.TransformerLM.transformer import Transformer
+from transformer import Transformer
 from torch import nn
 import torch
 import time
 from torch.nn import functional as F
 import numpy as np
+
+
+# data
+src_file = 'data/english.txt'
+trg_file = 'data/french.txt'
+src_lang = 'en_core_web_trf'
+trg_lang = 'fr_dep_news_trf'
 
 d_model = 512
 heads = 8

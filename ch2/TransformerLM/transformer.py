@@ -3,6 +3,7 @@ from torch import nn
 from torch.nn import functional as F
 from utils.get_clones import get_clones
 from utils.embedder import Embedder
+from torch.autograd import Variable
 
 
 class PositionalEncoder(nn.Module):
@@ -15,7 +16,8 @@ class PositionalEncoder(nn.Module):
         for pos in range(max_seq_len):
             for i in range(0, d_model, 2):
                 pe[pos, i] = torch.sin(pos / (10000 ** (i / d_model)))
-                pe[pos, i + 1] = torch.cos(pos / (10000 ** (i / d_model)))
+                if i + 1 < d_model:  # to avoid index out of range
+                    pe[pos, i + 1] = torch.cos(pos / (10000 ** (i / d_model)))
 
         pe = pe.unsqueeze(0) # (1, max_seq_len, d_model) add batch dimension
         # not a parameter, but a buffer which means it won't be updated during training
@@ -24,9 +26,9 @@ class PositionalEncoder(nn.Module):
     def forward(self, x):
         # scale the value of input 
         x = x * torch.sqrt(self.d_model) # (batch_size, seq_len, d_model)
-        seq_len = x.size(1)  
+        seq_len = x.size(1)
         # add positional encoding to input
-        x = x + self.pe[:, :seq_len].detach().cuda() # (batch_size, seq_len, d_model)
+        x = x + Variable(self.pe[:, :seq_len, :], require_grad=False) # (batch_size, seq_len, d_model)
         return self.dropout(x) # (batch_size, seq_len, d_model)
 
 

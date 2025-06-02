@@ -140,7 +140,6 @@ training_args = TrainingArguments(
     per_device_eval_batch_size=64,
     logging_steps=1000,  # log every 1000 steps
     save_steps=1000,  # save the model every 1000 steps
-    load_best_model_at_end=True,  # load the best model at the end of training
 )
 
 

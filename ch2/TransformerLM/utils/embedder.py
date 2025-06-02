@@ -1,5 +1,6 @@
 from torch import nn
 
+
 class Embedder(nn.Module):
     def __init__(self, vocab_size, d_model):
         """
