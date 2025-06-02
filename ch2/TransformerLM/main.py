@@ -1,9 +1,10 @@
-from transformer import Transformer
+from model.transformer import Transformer
 from torch import nn
 import torch
 import time
 from torch.nn import functional as F
 import numpy as np
+from utils.process import read_data, create_fields, create_dataset
 
 
 # data
@@ -13,8 +14,12 @@ src_lang = 'en_core_web_trf'
 trg_lang = 'fr_dep_news_trf'
 max_strlen = 80
 batchsize = 1500
+src_data, trg_data = read_data(src_file, trg_file)
+EN_TEXT, FR_TEXT = create_fields(src_lang, trg_lang)
+train_iter, src_pad, trg_pad = create_dataset(src_data, trg_data, EN_TEXT, FR_TEXT, max_strlen, batchsize)
 
 
+# model parameters
 d_model = 512
 heads = 8
 N = 6
