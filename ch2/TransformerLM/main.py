@@ -11,6 +11,9 @@ src_file = 'data/english.txt'
 trg_file = 'data/french.txt'
 src_lang = 'en_core_web_trf'
 trg_lang = 'fr_dep_news_trf'
+max_strlen = 80
+batchsize = 1500
+
 
 d_model = 512
 heads = 8
