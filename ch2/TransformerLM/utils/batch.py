@@ -20,12 +20,12 @@ def nopeak_mask(size):
 def create_masks(src, trg, src_pad, trg_pad):
     """Create masks for source and target sequences.
     Args:
-        src: source sequence tensor
-        trg: target sequence tensor
+        src: source sequence tensor (batch_size, src_seq_len)
+        trg: target sequence tensor (batch_size, trg_seq_len)
         src_pad: padding index for source
         trg_pad: padding index for target
     """
-    src_mask = (src != src_pad).unsqueeze(-2)
+    src_mask = (src != src_pad).unsqueeze(-2) # (batch_size, 1, src_seq_len)
 
     if trg is not None:
         trg_mask = (trg != trg_pad).unsqueeze(-2)
@@ -34,7 +34,7 @@ def create_masks(src, trg, src_pad, trg_pad):
         trg_mask = trg_mask & np_mask
     else:
         trg_mask = None
-    return src_mask, trg_mask
+    return src_mask, trg_mask # (batch_size, 1, src_seq_len), (batch_size, 1, trg_seq_len)
 
 
 class MyIterator(data.Iterator):

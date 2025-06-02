@@ -51,16 +51,16 @@ class MultiHeadAttention(nn.Module):
     def attention(q, k, v, d_k, mask=None, dropout=None):
         """
         Args:
-            q: query tensor of shape (batch_size, h, seq_len, d_k)
-            k: key tensor of shape (batch_size, h, seq_len, d_k)
-            v: value tensor of shape (batch_size, h, seq_len, d_k)
+            q: query tensor of shape (batch_size, h, q_seq_len, d_k)
+            k: key tensor of shape (batch_size, h, kv_seq_len, d_k)
+            v: value tensor of shape (batch_size, h, kv_seq_len, d_k)
             d_k: dimension of key
             mask: mask tensor of shape (batch_size, 1, seq_len)
-            
+            q_seq_len = or != kv_seq_len
         Returns:
             output: attention output tensor of shape (batch_size, h, seq_len, d_k)"""
         # attention scores, q * k^T, scaled by sqrt(d_k) to prevent large values
-        # scores: (batch_size, h, seq_len, d_k) * (batch_size, h, d_k, seq_len) -> (batch_size, h, seq_len, seq_len)
+        # scores: (batch_size, h, q_seq_len, d_k) * (batch_size, h, d_k, kv_seq_len) -> (batch_size, h, q_seq_len, kv_seq_len)
         scores = torch.matmul(q, k.transpose(-2, -1)) / torch.sqrt(d_k)
 
         # apply mask to scores to prevent attention to certain positions of blank tokens
@@ -69,7 +69,7 @@ class MultiHeadAttention(nn.Module):
         # the mask in decoder is used to prevent attention to future tokens
         if mask is not None:
             mask = mask.unsqueeze(1) # (batch_size, 1, seq_len) -> (batch_size, 1, 1, seq_len)
-            scores = scores.masked_fill(mask == 0, -1e9)
+            scores = scores.masked_fill(mask == 0, -1e9) # (batch_size, h, q_seq_len, kv_seq_len)
 
         # apply softmax to scores to get attention weights of each query from each key
         scores = F.softmax(scores, dim=-1)
@@ -79,7 +79,7 @@ class MultiHeadAttention(nn.Module):
             scores = dropout(scores)
 
         # apply attention weights to value tensor
-        # output: (batch_size, h, seq_len, seq_len) * (batch_size, h, seq_len, d_k) -> (batch_size, h, seq_len, d_k)
+        # output: (batch_size, h, q_seq_len, kv_seq_len) * (batch_size, h, kv_seq_len, d_k) -> (batch_size, h, q_seq_len, d_k)
         output = torch.matmul(scores, v)
 
         return output
@@ -87,9 +87,9 @@ class MultiHeadAttention(nn.Module):
     def forward(self, q, k, v, mask=None):
         """
         Args:
-            q: query tensor of shape (batch_size, seq_len, d_model)
-            k: key tensor of shape (batch_size, seq_len, d_model)
-            v: value tensor of shape (batch_size, seq_len, d_model)
+            q: query tensor of shape (batch_size, q_seq_len, d_model)
+            k: key tensor of shape (batch_size, kv_seq_len, d_model)
+            v: value tensor of shape (batch_size, kv_seq_len, d_model)
             mask: mask tensor of shape (batch_size, 1, seq_len)
         Returns:
             output: attention output tensor of shape (batch_size, seq_len, d_model)
@@ -103,16 +103,16 @@ class MultiHeadAttention(nn.Module):
         v = self.v_linear(v).view(batch_size, -1, self.h, self.d_k).transpose(1, 2)
 
         # apply attention on all h heads
-        # scores: (batch_size, h, seq_len, d_k)
+        # scores: (batch_size, h, q_seq_len, d_k)
         scores = self.attention(q, k, v, self.d_k, mask=mask, dropout=self.dropout)
 
         # concatenate heads and put through final linear layer
-        # scores: (batch_size, h, seq_len, d_k) -> (batch_size, seq_len, d_model)
+        # scores: (batch_size, h, q_seq_len, d_k) -> (batch_size, q_seq_len, d_model)
         # why contiguous? after transpose, the tensor is not contiguous in memory
         # so we need to make it contiguous before reshaping
         concat = scores.transpose(1, 2).contiguous().view(batch_size, -1, self.d_model)
 
-        output = self.out(concat) # (batch_size, seq_len, d_model)
+        output = self.out(concat) # (batch_size, q_seq_len, d_model)
 
         return output
 
@@ -208,10 +208,10 @@ class DecoderLayer(nn.Module):
     def forward(self, x, enc_output, src_mask, tgt_mask):
         """
         Args:
-            x: input tensor of shape (batch_size, seq_len, d_model)
-            enc_output: encoder output tensor of shape (batch_size, seq_len, d_model)
-            src_mask: source mask tensor of shape (batch_size, 1, seq_len) for padding tokens
-            tgt_mask: target mask tensor of shape (batch_size, 1, seq_len) for future tokens
+            x: input tensor of shape (batch_size, trg_seq_len, d_model)
+            enc_output: encoder output tensor of shape (batch_size, src_seq_len, d_model)
+            src_mask: source mask tensor of shape (batch_size, 1, src_seq_len) for padding tokens
+            tgt_mask: target mask tensor of shape (batch_size, 1, tgt_seq_len) for future tokens
         """
         attn_output_1 = self.attention_1(x, x, x, mask=tgt_mask)
         attn_output_1 = self.dropout_1(attn_output_1)
@@ -249,6 +249,10 @@ class Decoder(nn.Module):
 
 
 class Transformer(nn.Module):
+    """
+    returns:
+        output: scores of the target vocabulary for each token in the target sequence based on the previous masked tokens
+    """
     def __init__(self, src_vocab, trg_vocab, d_model, N, heads, dropout=0.1, d_ff=2048):
         super().__init__()
         self.encoder = Encoder(src_vocab, d_model, N, heads, dropout, d_ff)
@@ -260,4 +264,4 @@ class Transformer(nn.Module):
         dec_output = self.decoder(trg, enc_output, src_mask, trg_mask)
         output = self.out(dec_output)
 
-        return output # (batch_size, seq_len, trg_vocab)
+        return output # (batch_size, trg_seq_len, trg_vocab)

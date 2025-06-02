@@ -4,7 +4,8 @@ import torch
 import time
 from torch.nn import functional as F
 import numpy as np
-from utils.process import read_data, create_fields, create_dataset
+from utils.process import read_data, create_fields, create_dataset, tokenize_en
+from utils.batch import create_masks
 
 
 # data
@@ -12,11 +13,11 @@ src_file = 'data/english.txt'
 trg_file = 'data/french.txt'
 src_lang = 'en_core_web_trf'
 trg_lang = 'fr_dep_news_trf'
-max_strlen = 80
+max_strlen = 80 # max sequence length
 batchsize = 1500
 src_data, trg_data = read_data(src_file, trg_file)
 EN_TEXT, FR_TEXT = create_fields(src_lang, trg_lang)
-train_iter, src_pad, trg_pad = create_dataset(src_data, trg_data, EN_TEXT, FR_TEXT, max_strlen, batchsize)
+train_iter, src_pad, trg_pad = create_dataset(src_data, trg_data, EN_TEXT, FR_TEXT, max_strlen, batchsize).to('cuda' if torch.cuda.is_available() else 'cpu')
 
 
 # model parameters
@@ -34,7 +35,7 @@ for p in model.parameters():
         nn.init.xavier_uniform_(p)
 
 # Define the optimizer
-optim = torch.optim.Adam(model.parameters(), lr=0.0001, betas=(0.9, 0.98), eps=1e-9)
+optim = torch.optim.Adam(model.parameters(), lr=0.0001, betas=(0.9, 0.98), eps=1e-9).to('cuda' if torch.cuda.is_available() else 'cpu')
 
 
 def train_model(epochs, print_every=1000):
@@ -48,19 +49,29 @@ def train_model(epochs, print_every=1000):
 
     for epoch in range(epochs):
         for i, batch in enumerate(train_iter):
-            src = batch.English.transpose(0, 1)
-            trg = batch.French.transpose(0, 1)
+            # src: (max_seq_len, batch_size) -> (batch_size, max_seq_len)
+            src = batch.src.transpose(0, 1)
+            trg = batch.trg.transpose(0, 1)
 
-            trg_input = trg[:, :-1] # Remove <eos> token
+            # Remove <eos> token
+            # (batch_size, seq_len) -> (batch_size, trg_seq_len(max_seq_len - 1))
+            trg_input = trg[:, :-1] # from <sos> to the last token before <eos> or <pad>
 
-            targets = trg[:, 1:].contiguous().view(-1) # Remove <sos> token and flatten
+            # remove <sos> token from target
+            # from the next token of <sos> to <eos>, then flatten
+            # (batch_size * trg_seq_len)
+            targets = trg[:, 1:].contiguous().view(-1)
 
+            # (batch_size, 1, src_seq_len), (batch_size, 1, trg_seq_len)
             src_mask, trg_mask = create_masks(src, trg_input, src_pad, trg_pad)
 
+            # predictions of the model, scores of the target vocabulary for each token in the target sequence based on the previous masked tokens
+            # (batch_size, trg_seq_len, trg_vocab)
             preds = model(src, trg_input, src_mask, trg_mask)
 
             optim.zero_grad()
 
+            # (batch_size, trg_seq_len, trg_vocab) -> (batch_size * trg_seq_len, trg_vocab)
             loss = F.cross_entropy(preds.view(-1, preds.size(-1)),
                                    targets, ignore_index=trg_pad)
             
