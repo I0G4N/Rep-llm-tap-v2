@@ -26,7 +26,7 @@ N = 6
 src_vocab = len(EN_TEXT.vocab)
 trg_vocab = len(FR_TEXT.vocab)
 
-model = Transformer(src_vocab, trg_vocab, d_model, N, heads)
+model = Transformer(src_vocab, trg_vocab, d_model, N, heads).to('cuda' if torch.cuda.is_available() else 'cpu')
 
 # Initialize the parameters of the model
 for p in model.parameters():

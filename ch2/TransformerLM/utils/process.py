@@ -58,6 +58,7 @@ def create_dataset(src_data, trg_data, SRC, TRG, max_strlen, batchsize):
     df.to_csv('translate_transformer_temp.csv', index=False)
 
     data_fields = [('src', SRC), ('trg', TRG)]
+    # get padding indices for source and target languages
     train = data.TabularDataset('./translate_transformer_temp.csv', format='csv', fields=data_fields)
 
     train_iter = MyIterator(train, batch_size=batchsize, device='cuda',

@@ -4,6 +4,39 @@ import numpy as np
 from torch.autograd import Variable
 
 
+def nopeak_mask(size):
+    """Create a mask to prevent attention to future tokens.
+    Args:
+        size: size of the mask (sequence length)
+    Returns:
+        A boolean mask of shape (1, 1, size, size) where future positions are set to True.
+    """
+    np_mask = np.triu(np.ones((1, size, size)), k=1).astype('uint8') # set as int
+    np_mask = Variable(torch.from_numpy(np_mask) == 0) # set to boolean matrix
+
+    return np_mask
+
+
+def create_masks(src, trg, src_pad, trg_pad):
+    """Create masks for source and target sequences.
+    Args:
+        src: source sequence tensor
+        trg: target sequence tensor
+        src_pad: padding index for source
+        trg_pad: padding index for target
+    """
+    src_mask = (src != src_pad).unsqueeze(-2)
+
+    if trg is not None:
+        trg_mask = (trg != trg_pad).unsqueeze(-2)
+        size = trg.size(1)
+        np_mask = nopeak_mask(size)
+        trg_mask = trg_mask & np_mask
+    else:
+        trg_mask = None
+    return src_mask, trg_mask
+
+
 class MyIterator(data.Iterator):
     def create_batches(self):
         if self.train:
@@ -28,6 +61,7 @@ class MyIterator(data.Iterator):
 
 
 global max_src_in_batch, max_tgt_in_batch
+
 
 def batch_size_fn(new, count, sofar):
     """Keep augmenting batch and calculate total number of tokens + padding.
