@@ -12,7 +12,7 @@ def nopeak_mask(size):
         A boolean mask of shape (1, 1, size, size) where future positions are set to True.
     """
     np_mask = np.triu(np.ones((1, size, size)), k=1).astype('uint8') # set as int
-    np_mask = Variable(torch.from_numpy(np_mask) == 0) # set to boolean matrix
+    np_mask = Variable(torch.from_numpy(np_mask) == 0).to("cuda") # set to boolean matrix
 
     return np_mask
 
@@ -25,10 +25,10 @@ def create_masks(src, trg, src_pad, trg_pad):
         src_pad: padding index for source
         trg_pad: padding index for target
     """
-    src_mask = (src != src_pad).unsqueeze(-2) # (batch_size, 1, src_seq_len)
+    src_mask = (src != src_pad).unsqueeze(-2).to("cuda") # (batch_size, 1, src_seq_len)
 
     if trg is not None:
-        trg_mask = (trg != trg_pad).unsqueeze(-2)
+        trg_mask = (trg != trg_pad).unsqueeze(-2).to("cuda")
         size = trg.size(1)
         np_mask = nopeak_mask(size)
         trg_mask = trg_mask & np_mask
@@ -70,11 +70,11 @@ def batch_size_fn(new, count, sofar):
         count: number of examples in the current batch
         sofar: total number of tokens in the current batch"""
     global max_src_in_batch, max_tgt_in_batch
-    if count == 0: # when the first example is added to the batch, reset the max values
+    if count == 1: # when the first example is added to the batch, reset the max values
         max_src_in_batch = 0
         max_tgt_in_batch = 0
     max_src_in_batch = max(max_src_in_batch, len(new.src))
-    max_tgt_in_batch = max(max_tgt_in_batch, len(new.tgt) + 2) # include <sos> and <eos> tokens in target length
+    max_tgt_in_batch = max(max_tgt_in_batch, len(new.trg) + 2) # include <sos> and <eos> tokens in target length
     src_elements = count * max_src_in_batch # total number of source tokens in the batch
     tgt_elements = count * max_tgt_in_batch
     return max(src_elements, tgt_elements) # return the sum of the maximum of source and target tokens in the batch

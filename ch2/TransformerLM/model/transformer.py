@@ -15,9 +15,9 @@ class PositionalEncoder(nn.Module):
         pe = torch.zeros(max_seq_len, d_model) # (max_seq_len, d_model)
         for pos in range(max_seq_len):
             for i in range(0, d_model, 2):
-                pe[pos, i] = torch.sin(pos / (10000 ** (i / d_model)))
+                pe[pos, i] = torch.sin(torch.tensor(pos / (10000 ** (i / d_model))))
                 if i + 1 < d_model:  # to avoid index out of range
-                    pe[pos, i + 1] = torch.cos(pos / (10000 ** (i / d_model)))
+                    pe[pos, i + 1] = torch.cos(torch.tensor(pos / (10000 ** (i / d_model))))
 
         pe = pe.unsqueeze(0) # (1, max_seq_len, d_model) add batch dimension
         # not a parameter, but a buffer which means it won't be updated during training
@@ -48,7 +48,7 @@ class MultiHeadAttention(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.out = nn.Linear(d_model, d_model)
 
-    def attention(q, k, v, d_k, mask=None, dropout=None):
+    def attention(self, q, k, v, d_k, mask=None, dropout=None):
         """
         Args:
             q: query tensor of shape (batch_size, h, q_seq_len, d_k)
@@ -104,7 +104,7 @@ class MultiHeadAttention(nn.Module):
 
         # apply attention on all h heads
         # scores: (batch_size, h, q_seq_len, d_k)
-        scores = self.attention(q, k, v, self.d_k, mask=mask, dropout=self.dropout)
+        scores = self.attention(q, k, v, self.d_k, mask, dropout=self.dropout)
 
         # concatenate heads and put through final linear layer
         # scores: (batch_size, h, q_seq_len, d_k) -> (batch_size, q_seq_len, d_model)

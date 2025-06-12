@@ -6,6 +6,7 @@ from torch.nn import functional as F
 import numpy as np
 from utils.process import read_data, create_fields, create_dataset, tokenize_en
 from utils.batch import create_masks
+from torch.autograd import Variable
 
 
 # data
@@ -17,7 +18,7 @@ max_strlen = 80 # max sequence length
 batchsize = 1500
 src_data, trg_data = read_data(src_file, trg_file)
 EN_TEXT, FR_TEXT = create_fields(src_lang, trg_lang)
-train_iter, src_pad, trg_pad = create_dataset(src_data, trg_data, EN_TEXT, FR_TEXT, max_strlen, batchsize).to('cuda' if torch.cuda.is_available() else 'cpu')
+train_iter, src_pad, trg_pad = create_dataset(src_data, trg_data, EN_TEXT, FR_TEXT, max_strlen, batchsize)
 
 
 # model parameters
@@ -27,7 +28,7 @@ N = 6
 src_vocab = len(EN_TEXT.vocab)
 trg_vocab = len(FR_TEXT.vocab)
 
-model = Transformer(src_vocab, trg_vocab, d_model, N, heads).to('cuda' if torch.cuda.is_available() else 'cpu')
+model = Transformer(src_vocab, trg_vocab, d_model, N, heads).to("cuda")
 
 # Initialize the parameters of the model
 for p in model.parameters():
@@ -35,7 +36,7 @@ for p in model.parameters():
         nn.init.xavier_uniform_(p)
 
 # Define the optimizer
-optim = torch.optim.Adam(model.parameters(), lr=0.0001, betas=(0.9, 0.98), eps=1e-9).to('cuda' if torch.cuda.is_available() else 'cpu')
+optim = torch.optim.Adam(model.parameters(), lr=0.0001, betas=(0.9, 0.98), eps=1e-9)
 
 
 def train_model(epochs, print_every=1000):
@@ -87,32 +88,55 @@ def train_model(epochs, print_every=1000):
                        print_every))
                 total_loss = 0
                 temp = time.time()
+        if epoch % 10 == 0:
+            save_model(f"model/{epoch}epochs.pth")
 
 
-def translate(src, max_len=80, custom_string=False):
+def translate(src, max_len=80, custom_string=False, device="cpu"):
     model.eval()
     if custom_string:
         src = tokenize_en(src, EN_TEXT)
-        src = torch.LongTensor(src)
+        src = torch.LongTensor(src).to(device)
     print(src)
-    src_mask = (src != src_pad).unsqueeze(-2)
+    src_mask = (src != src_pad).unsqueeze(-2).to(device)
+    print(src_mask)
     e_outputs = model.encoder(src.unsqueeze(0), src_mask)
 
-    outputs = torch.zeros(max_len).type_as(src.data)
+    outputs = torch.zeros(max_len).type_as(src.data).to(device)
     outputs[0] = torch.LongTensor([FR_TEXT.vocab.stoi["<sos>"]])
 
     for i in range(1, max_len):
-        trg_mask = np.triu(np.ones((1, i, i)).astype('uint8'))
-        trg_mask = torch.from_numpy(trg_mask) == 0
+        trg_mask = np.triu(np.ones((1, i, i)), k=1).astype('uint8')
+        trg_mask = Variable(torch.from_numpy(trg_mask) == 0).to(device)
 
         out = model.out(model.decoder(outputs[:i].unsqueeze(0),
                                       e_outputs, src_mask, trg_mask))
         
         out = F.softmax(out, dim=-1)
-        val, ix = out[:, :-1].data.topk(1)
+        val, ix = out[:, -1].data.topk(1)
+        predicted_word = FR_TEXT.vocab.itos[ix[0][0]]
+        print(f"Step {i}: predicted '{predicted_word}' (index: {ix[0][0]})")
 
         outputs[i] = ix[0][0]
         if outputs[i] == FR_TEXT.vocab.stoi["<eos>"]:
             break
 
     return " ".join([FR_TEXT.vocab.itos[ix] for ix in outputs[:i]])
+
+
+def save_model(path):
+    torch.save(model.state_dict(), path)
+
+
+def load_model(path):
+    model.load_state_dict(torch.load(path))
+    
+
+if __name__ == "__main__":
+    train_model(4)
+    save_model("model/3.pth")
+    
+    words = "What are you doing?"
+    
+    trans = translate(words, custom_string=True, device="cuda")
+    print(trans)

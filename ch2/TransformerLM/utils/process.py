@@ -1,9 +1,7 @@
 import pandas as pd
-import torchtext
 from torchtext import data
-from tokenizer import tokenize
-from batch import MyIterator, batch_size_fn
-import os
+from utils.tokenizer import tokenize
+from utils.batch import MyIterator, batch_size_fn
 
 
 def read_data(src_file, trg_file):
