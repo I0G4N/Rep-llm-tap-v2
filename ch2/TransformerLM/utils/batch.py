@@ -67,10 +67,10 @@ def batch_size_fn(new, count, sofar):
     """Keep augmenting batch and calculate total number of tokens + padding.
     Args:
         new: new example to be added to the batch
-        count: number of examples in the current batch
+        count: the count of the new example in the batch
         sofar: total number of tokens in the current batch"""
     global max_src_in_batch, max_tgt_in_batch
-    if count == 1: # when the first example is added to the batch, reset the max values
+    if count == 1: # the "new"'s count is 1, meaning this is the first example in the batch
         max_src_in_batch = 0
         max_tgt_in_batch = 0
     max_src_in_batch = max(max_src_in_batch, len(new.src))
