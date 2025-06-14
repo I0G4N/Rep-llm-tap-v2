@@ -47,5 +47,3 @@ class DistributedSampler(Sampler):
     def set_epoch(self, epoch):
         # when the epoch changes, we need to change the seed for shuffling
         self.epoch = epoch
-
-        
